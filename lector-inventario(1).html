@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Escáner de Inventario</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+<style>
+  :root{
+    --ink:#0F3D3E;
+    --ink-2:#0B2B2C;
+    --paper:#F2EFE4;
+    --paper-2:#E8E3D3;
+    --amber:#C98A2C;
+    --amber-2:#A66E1D;
+    --red:#B5482E;
+    --green:#3E7256;
+    --line:#D8D2BE;
+    --text:#1E1E1A;
+    --muted:#6B6656;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .code{font-family:'Space Mono',monospace;}
+  h1,h2,h3{font-family:'Fraunces',serif; margin:0;}
+
+  header{
+    background:var(--ink);
+    color:var(--paper);
+    padding:22px 18px 18px;
+    position:sticky; top:0; z-index:20;
+    box-shadow:0 4px 14px rgba(15,61,62,0.25);
+  }
+  header .top{display:flex; align-items:baseline; justify-content:space-between; gap:8px;}
+  header h1{font-size:22px; font-weight:600; letter-spacing:0.2px;}
+  header .barcode-strip{display:flex; gap:2px; align-items:flex-end; height:20px; opacity:0.75;}
+  header .barcode-strip span{display:block; width:2px; background:var(--amber);}
+  header p.sub{margin:4px 0 0; font-size:12.5px; color:#C9D9D6; font-family:'Space Mono',monospace;}
+
+  nav{display:flex; background:var(--ink-2); overflow-x:auto;}
+  nav button{
+    flex:1; min-width:78px;
+    background:none; border:none; color:#9FC2BE;
+    padding:12px 6px; font-family:'Inter',sans-serif;
+    font-size:12.5px; font-weight:600; letter-spacing:0.2px;
+    cursor:pointer; border-bottom:3px solid transparent; transition:all .15s ease; white-space:nowrap;
+  }
+  nav button.active{color:var(--paper); border-bottom-color:var(--amber);}
+
+  main{ padding:16px; max-width:720px; margin:0 auto 60px; }
+  .view{display:none;}
+  .view.active{display:block;}
+
+  .scan-card{background:var(--ink); border-radius:14px; padding:14px; color:var(--paper); position:relative; overflow:hidden;}
+  #camera-wrap{position:relative; border-radius:10px; overflow:hidden; background:#000; aspect-ratio:4/3;}
+  #interactive{width:100%; height:100%;}
+  #interactive video, #interactive canvas{width:100%!important; height:100%!important; object-fit:cover;}
+  .scan-frame{position:absolute; inset:18% 8%; border:2px solid var(--amber); border-radius:6px; pointer-events:none;}
+  .scan-controls{display:flex; gap:8px; margin-top:12px;}
+  button.primary{background:var(--amber); color:var(--ink-2); border:none; padding:12px 16px; border-radius:9px; font-weight:700; font-size:14.5px; cursor:pointer; font-family:'Inter',sans-serif;}
+  button.primary:active{background:var(--amber-2);}
+  button.ghost{background:transparent; color:var(--paper); border:1.5px solid #3C6664; padding:12px 16px; border-radius:9px; font-weight:600; font-size:14px; cursor:pointer; font-family:'Inter',sans-serif;}
+  button.danger{background:var(--red); color:#fff; border:none;}
+  button.secondary{background:var(--paper-2); color:var(--text); border:1px solid var(--line);}
+  button.small{padding:7px 11px; font-size:12.5px; border-radius:7px;}
+  button.icon-btn{background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; border-radius:6px;}
+  button.icon-btn:hover{background:var(--paper-2);}
+
+  .manual-entry{margin-top:12px; display:flex; gap:8px;}
+  .manual-entry input{flex:1; padding:11px 12px; border-radius:8px; border:1.5px solid #3C6664; background:#0C3233; color:var(--paper); font-family:'Space Mono',monospace; font-size:14px;}
+  .manual-entry input::placeholder{color:#7FA5A1;}
+
+  .ticket{margin-top:16px; background:#fff; border-radius:4px; box-shadow:0 6px 20px rgba(15,61,62,0.12); position:relative; padding:18px 18px 14px;}
+  .ticket::before, .ticket::after{content:""; position:absolute; width:16px; height:16px; border-radius:50%; background:var(--paper); top:50%; transform:translateY(-50%);}
+  .ticket::before{left:-8px;} .ticket::after{right:-8px;}
+  .ticket .perf{border-top:1.5px dashed var(--line); margin:12px 0;}
+  .ticket-header{display:flex; justify-content:space-between; align-items:flex-start;}
+  .ticket-header .badge{font-size:10.5px; font-weight:700; letter-spacing:0.6px; text-transform:uppercase; padding:3px 8px; border-radius:20px;}
+  .badge.nuevo{background:#FBEBD7; color:var(--amber-2);}
+  .badge.existente{background:#DEEAE3; color:var(--green);}
+  .badge.entrada{background:#DEEAE3; color:var(--green);}
+  .badge.salida{background:#FBE4DD; color:var(--red);}
+  .ticket .code-line{font-family:'Space Mono',monospace; font-size:13px; color:var(--muted); margin-top:2px;}
+
+  .field-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px;}
+  .field-grid.full{grid-template-columns:1fr;}
+  label{display:block; font-size:11.5px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:4px;}
+  input, select{width:100%; padding:10px 11px; border-radius:7px; border:1.5px solid var(--line); font-family:'Inter',sans-serif; font-size:14.5px; background:var(--paper); color:var(--text);}
+  input:focus, select:focus{outline:2px solid var(--amber); border-color:var(--amber);}
+
+  .margin-preview{margin-top:14px; padding:12px; border-radius:8px; background:var(--paper-2); display:flex; justify-content:space-between; align-items:center;}
+  .margin-preview .num{font-family:'Space Mono',monospace; font-size:20px; font-weight:700;}
+  .margin-preview .num.pos{color:var(--green);} .margin-preview .num.neg{color:var(--red);}
+  .margin-preview .lbl{font-size:12px; color:var(--muted);}
+
+  .sell-row{display:flex; gap:8px; align-items:flex-end; margin-top:14px;}
+  .sell-row .qty{width:90px;}
+  .stock-pill{display:inline-block; margin-top:6px; font-size:12.5px; font-family:'Space Mono',monospace; padding:2px 8px; border-radius:20px; background:var(--paper-2); color:var(--text);}
+  .stock-pill.low{background:#FBE4DD; color:var(--red);}
+  .actions-row{display:flex; gap:8px; margin-top:14px;}
+
+  .toolbar{display:flex; gap:8px; margin-bottom:12px;}
+  .toolbar input{flex:1;}
+  .toolbar select{width:140px;}
+
+  .prod-card{background:#fff; border-radius:10px; padding:13px 14px; margin-bottom:10px; box-shadow:0 2px 8px rgba(15,61,62,0.08); display:flex; justify-content:space-between; gap:10px; cursor:pointer; border-left:4px solid var(--amber);}
+  .prod-card:active{background:var(--paper-2);}
+  .prod-card .info h3{font-size:15.5px; font-weight:600; font-family:'Inter',sans-serif;}
+  .prod-card .info .meta{font-size:12px; color:var(--muted); margin-top:2px;}
+  .prod-card .info .meta .cat{color:var(--amber-2); font-weight:600;}
+  .prod-card .nums{text-align:right; white-space:nowrap;}
+  .prod-card .nums .price{font-family:'Space Mono',monospace; font-weight:700; font-size:15px;}
+  .prod-card .nums .margin{font-size:11.5px; font-family:'Space Mono',monospace; margin-top:3px;}
+  .prod-card .nums .margin.pos{color:var(--green);} .prod-card .nums .margin.neg{color:var(--red);}
+
+  .empty{text-align:center; padding:40px 20px; color:var(--muted);}
+  .empty h3{font-family:'Fraunces',serif; color:var(--text); margin-bottom:6px;}
+
+  .summary-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:14px;}
+  .summary-card{background:var(--ink); color:var(--paper); border-radius:10px; padding:12px 10px; text-align:center;}
+  .summary-card .val{font-family:'Space Mono',monospace; font-size:17px; font-weight:700; color:var(--amber);}
+  .summary-card .lbl{font-size:10.5px; color:#B9D2CE; margin-top:3px; text-transform:uppercase; letter-spacing:0.3px;}
+
+  .section-card{background:#fff; border-radius:12px; padding:14px; margin-bottom:16px; box-shadow:0 2px 8px rgba(15,61,62,0.07);}
+  .section-card h3{font-size:16px; margin-bottom:2px;}
+  .section-card .section-sub{font-size:12px; color:var(--muted); margin-bottom:10px;}
+
+  .week-nav{display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;}
+  .week-nav .range{font-family:'Space Mono',monospace; font-size:13px; font-weight:700; text-align:center;}
+  .week-nav button{background:var(--paper-2); border:none; width:34px; height:34px; border-radius:8px; cursor:pointer; font-size:16px; font-weight:700; color:var(--ink);}
+
+  .table-wrap{overflow-x:auto; -webkit-overflow-scrolling:touch;}
+  table.week-table{width:100%; border-collapse:collapse; font-size:12.5px; min-width:600px;}
+  table.week-table th, table.week-table td{padding:7px 8px; text-align:right; border-bottom:1px solid var(--line); white-space:nowrap;}
+  table.week-table th{font-family:'Space Mono',monospace; font-size:10.5px; text-transform:uppercase; color:var(--muted); font-weight:700;}
+  table.week-table td:first-child, table.week-table th:first-child{text-align:left; position:sticky; left:0; background:#fff; font-family:'Inter',sans-serif; font-weight:600; max-width:120px; overflow:hidden; text-overflow:ellipsis;}
+  table.week-table tr.total-row td{font-weight:700; background:var(--paper-2); border-top:2px solid var(--ink);}
+  table.week-table td.week-total, table.week-table th.week-total{font-weight:700; color:var(--amber-2); border-left:2px solid var(--line);}
+  table.week-table td.today-col, table.week-table th.today-col{background:#FBF3E4;}
+
+  .goal-box{margin-top:12px; padding:12px; border-radius:9px; background:var(--paper-2);}
+  .goal-row{display:flex; align-items:center; gap:8px;}
+  .goal-row input{max-width:130px;}
+  .progress-track{margin-top:10px; height:10px; border-radius:20px; background:#DBD5C2; overflow:hidden;}
+  .progress-fill{height:100%; background:var(--green); border-radius:20px; transition:width .3s ease;}
+  .progress-fill.over{background:var(--amber);}
+  .goal-meta{display:flex; justify-content:space-between; font-size:11.5px; color:var(--muted); margin-top:6px; font-family:'Space Mono',monospace;}
+
+  table.reg-table{width:100%; border-collapse:collapse; font-size:12.5px;}
+  table.reg-table th{text-align:left; font-family:'Space Mono',monospace; font-size:10px; text-transform:uppercase; color:var(--muted); padding:6px 6px; border-bottom:2px solid var(--ink);}
+  table.reg-table td{padding:8px 6px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  table.reg-table td.num{font-family:'Space Mono',monospace; text-align:right;}
+
+  .forecast-card{background:var(--ink); color:var(--paper); border-radius:12px; padding:16px;}
+  .forecast-card h3{color:var(--paper);}
+  .forecast-num{font-family:'Space Mono',monospace; font-size:26px; font-weight:700; color:var(--amber); margin:8px 0 4px;}
+  .forecast-note{font-size:12px; color:#B9D2CE; line-height:1.5;}
+
+  .modal-bg{display:none; position:fixed; inset:0; background:rgba(15,61,62,0.55); z-index:50; align-items:flex-end; justify-content:center;}
+  .modal-bg.active{display:flex;}
+  .modal{background:var(--paper); width:100%; max-width:640px; border-radius:16px 16px 0 0; padding:20px 18px 26px; max-height:88vh; overflow-y:auto;}
+  .modal-handle{width:40px; height:4px; background:var(--line); border-radius:4px; margin:0 auto 14px;}
+
+  .toast{position:fixed; bottom:16px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--ink-2); color:var(--paper); padding:11px 18px; border-radius:30px; font-size:13.5px; font-weight:600; opacity:0; transition:all .25s ease; z-index:60; pointer-events:none; white-space:nowrap;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  @media (max-width:400px){
+    .field-grid{grid-template-columns:1fr;}
+    .summary-card .val{font-size:14px;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="top">
+    <h1>Escáner de Inventario</h1>
+    <div class="barcode-strip" id="deco-bars"></div>
+  </div>
+  <p class="sub">lee&nbsp;·&nbsp;registra&nbsp;·&nbsp;calcula márgenes</p>
+</header>
+
+<nav>
+  <button class="tab-btn active" data-view="scan">Escáner</button>
+  <button class="tab-btn" data-view="inv">Inventario</button>
+  <button class="tab-btn" data-view="mov">Entradas/Salidas</button>
+  <button class="tab-btn" data-view="sales">Ventas</button>
+</nav>
+
+<main>
+
+  <!-- ESCÁNER -->
+  <section class="view active" id="view-scan">
+    <div class="scan-card">
+      <div id="camera-wrap">
+        <div id="interactive"></div>
+        <div class="scan-frame" id="scan-frame" style="display:none;"></div>
+      </div>
+      <div class="scan-controls">
+        <button class="primary" id="btn-start-scan">Iniciar cámara</button>
+        <button class="ghost" id="btn-stop-scan" style="display:none;">Detener</button>
+      </div>
+      <div class="manual-entry">
+        <input type="text" id="manual-code" placeholder="o escribe el código manualmente">
+        <button class="primary" id="btn-manual-go">Buscar</button>
+      </div>
+    </div>
+    <div id="ticket-area"></div>
+  </section>
+
+  <!-- INVENTARIO -->
+  <section class="view" id="view-inv">
+    <div class="toolbar">
+      <input type="text" id="inv-search" placeholder="Buscar por nombre o código...">
+      <select id="inv-filter-cat"><option value="">Todas las categorías</option></select>
+    </div>
+    <div id="inv-list"></div>
+  </section>
+
+  <!-- ENTRADAS / SALIDAS -->
+  <section class="view" id="view-mov">
+    <div class="section-card">
+      <h3>Registrar movimiento</h3>
+      <div class="section-sub">Entradas (compras, devoluciones) y salidas (merma, daño, uso interno) que no son ventas</div>
+      <div class="field-grid full">
+        <div><label>Producto</label><select id="mv-producto"></select></div>
+      </div>
+      <div class="field-grid">
+        <div><label>Tipo</label>
+          <select id="mv-tipo">
+            <option value="entrada">Entrada (+ stock)</option>
+            <option value="salida">Salida (− stock)</option>
+          </select>
+        </div>
+        <div><label>Cantidad</label><input id="mv-cantidad" type="number" min="1" value="1"></div>
+      </div>
+      <div class="field-grid">
+        <div><label>Motivo</label><input id="mv-motivo" list="mv-motivos" placeholder="Ej. Compra a proveedor"></div>
+        <div id="mv-costo-wrap"><label>Costo unitario (opcional)</label><input id="mv-costo" type="number" min="0" step="0.01" placeholder="Actualiza el costo"></div>
+      </div>
+      <datalist id="mv-motivos">
+        <option value="Compra a proveedor">
+        <option value="Devolución de cliente">
+        <option value="Ajuste de inventario">
+        <option value="Merma">
+        <option value="Producto dañado">
+        <option value="Robo">
+        <option value="Uso interno">
+      </datalist>
+      <div class="actions-row">
+        <button class="primary" id="btn-registrar-mov" style="flex:1;">Registrar movimiento</button>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <h3>Historial de movimientos</h3>
+      <div class="section-sub">Toca ✎ para editar o eliminar un movimiento</div>
+      <div id="mov-list"></div>
+    </div>
+  </section>
+
+  <!-- VENTAS -->
+  <section class="view" id="view-sales">
+    <div class="summary-grid">
+      <div class="summary-card"><div class="val" id="sum-unidades">0</div><div class="lbl">Unidades totales</div></div>
+      <div class="summary-card"><div class="val" id="sum-ingresos">$0</div><div class="lbl">Ingresos totales</div></div>
+      <div class="summary-card"><div class="val" id="sum-ganancia">$0</div><div class="lbl">Ganancia total</div></div>
+    </div>
+
+    <div class="section-card">
+      <div class="week-nav">
+        <button id="week-prev">‹</button>
+        <div class="range" id="week-range">-</div>
+        <button id="week-next">›</button>
+      </div>
+      <div class="table-wrap">
+        <table class="week-table" id="week-table"></table>
+      </div>
+      <div class="goal-box">
+        <div class="goal-row">
+          <label style="margin:0; white-space:nowrap;">Meta semanal</label>
+          <input id="meta-input" type="number" min="0" step="1" placeholder="0.00">
+          <button class="primary small" id="btn-guardar-meta">Guardar</button>
+        </div>
+        <div class="progress-track"><div class="progress-fill" id="goal-progress" style="width:0%;"></div></div>
+        <div class="goal-meta"><span id="goal-actual">$0</span><span id="goal-restante">Meta: $0</span></div>
+      </div>
+    </div>
+
+    <div class="forecast-card">
+      <h3>Pronóstico próxima semana</h3>
+      <div class="forecast-num" id="forecast-num">—</div>
+      <div class="forecast-note" id="forecast-note">Registra ventas durante al menos una semana completa para ver un pronóstico.</div>
+    </div>
+
+    <div class="section-card">
+      <h3>Registro de ventas</h3>
+      <div class="section-sub">Editable — toca ✎ para corregir cantidad o precio</div>
+      <div class="table-wrap">
+        <table class="reg-table" id="sales-reg-table"></table>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="modal-bg" id="modal-bg">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- Datos (localStorage) ---------------- */
+const DB_PROD = 'sc_inv_productos';
+const DB_SALES = 'sc_inv_ventas';
+const DB_MOV = 'sc_inv_movimientos';
+const DB_META = 'sc_inv_meta_semanal';
+
+function getProductos(){ return JSON.parse(localStorage.getItem(DB_PROD) || '[]'); }
+function saveProductos(list){ localStorage.setItem(DB_PROD, JSON.stringify(list)); }
+function getVentas(){ return JSON.parse(localStorage.getItem(DB_SALES) || '[]'); }
+function saveVentas(list){ localStorage.setItem(DB_SALES, JSON.stringify(list)); }
+function getMovs(){ return JSON.parse(localStorage.getItem(DB_MOV) || '[]'); }
+function saveMovs(list){ localStorage.setItem(DB_MOV, JSON.stringify(list)); }
+function getMeta(){ return Number(localStorage.getItem(DB_META) || 0); }
+function saveMeta(v){ localStorage.setItem(DB_META, String(v)); }
+
+function money(n){ return '$' + Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2, maximumFractionDigits:2}); }
+function calcMargen(costo, precio){
+  costo = Number(costo)||0; precio = Number(precio)||0;
+  const ganancia = precio - costo;
+  const pct = precio > 0 ? (ganancia/precio)*100 : 0;
+  return {ganancia, pct};
+}
+function toast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(window._toastTimer);
+  window._toastTimer = setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+(function(){
+  const wrap = document.getElementById('deco-bars');
+  for(let i=0;i<14;i++){
+    const b = document.createElement('span');
+    const h = 6 + Math.round(Math.random()*14);
+    b.style.height = h+'px';
+    b.style.width = (Math.random()>0.7?'3px':'2px');
+    wrap.appendChild(b);
+  }
+})();
+
+/* ---------------- Navegación de tabs ---------------- */
+document.querySelectorAll('.tab-btn').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='inv') renderInventario();
+    if(btn.dataset.view==='mov') renderMovimientos();
+    if(btn.dataset.view==='sales') renderVentasView();
+    if(btn.dataset.view!=='scan') stopScanner();
+  });
+});
+
+/* ---------------- Escáner de código de barras (Quagga) ---------------- */
+let scannerActive = false;
+let lastCode = null;
+let lastCodeTime = 0;
+
+function startScanner(){
+  Quagga.init({
+    inputStream:{ name:"Live", type:"LiveStream", target: document.querySelector('#interactive'),
+      constraints:{ facingMode:"environment", width:{ideal:640}, height:{ideal:480} } },
+    decoder:{ readers:["ean_reader","ean_8_reader","code_128_reader","upc_reader","upc_e_reader","codabar_reader"] },
+    locate:true
+  }, function(err){
+    if(err){ console.error(err); toast('No se pudo abrir la cámara. Usa el campo manual.'); return; }
+    Quagga.start();
+    scannerActive = true;
+    document.getElementById('scan-frame').style.display='block';
+    document.getElementById('btn-start-scan').style.display='none';
+    document.getElementById('btn-stop-scan').style.display='inline-block';
+  });
+  Quagga.onDetected(onBarcodeDetected);
+}
+function onBarcodeDetected(result){
+  const code = result.codeResult.code;
+  const now = Date.now();
+  if(code === lastCode && (now - lastCodeTime) < 2500) return;
+  lastCode = code; lastCodeTime = now;
+  if(navigator.vibrate) navigator.vibrate(80);
+  handleScannedCode(code);
+}
+function stopScanner(){
+  if(scannerActive){ Quagga.offDetected(onBarcodeDetected); Quagga.stop(); scannerActive = false; }
+  document.getElementById('scan-frame').style.display='none';
+  document.getElementById('btn-start-scan').style.display='inline-block';
+  document.getElementById('btn-stop-scan').style.display='none';
+}
+document.getElementById('btn-start-scan').addEventListener('click', startScanner);
+document.getElementById('btn-stop-scan').addEventListener('click', stopScanner);
+document.getElementById('btn-manual-go').addEventListener('click', ()=>{
+  const v = document.getElementById('manual-code').value.trim();
+  if(v) handleScannedCode(v);
+});
+document.getElementById('manual-code').addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ document.getElementById('btn-manual-go').click(); } });
+
+/* ---------------- Al leer un código ---------------- */
+function handleScannedCode(code){
+  const productos = getProductos();
+  const existente = productos.find(p=>p.codigo === code);
+  if(existente){ renderTicketExistente(existente); } else { renderTicketNuevo(code); }
+}
+
+function renderTicketNuevo(codigo){
+  const area = document.getElementById('ticket-area');
+  area.innerHTML = `
+    <div class="ticket">
+      <div class="ticket-header">
+        <div><h3>Producto nuevo</h3><div class="code-line">${codigo}</div></div>
+        <span class="badge nuevo">No registrado</span>
+      </div>
+      <div class="perf"></div>
+      <div class="field-grid full"><div><label>Nombre del producto</label><input id="f-nombre" type="text" placeholder="Ej. Coca-Cola 600ml"></div></div>
+      <div class="field-grid">
+        <div><label>Categoría</label><input id="f-categoria" type="text" placeholder="Ej. Bebidas" list="cat-list"></div>
+        <div><label>Stock inicial</label><input id="f-stock" type="number" min="0" value="1"></div>
+      </div>
+      <div class="field-grid">
+        <div><label>Costo</label><input id="f-costo" type="number" min="0" step="0.01" placeholder="0.00"></div>
+        <div><label>Precio de venta</label><input id="f-precio" type="number" min="0" step="0.01" placeholder="0.00"></div>
+      </div>
+      <div class="margin-preview"><div><div class="lbl">Ganancia / margen</div><div class="num" id="margin-preview">$0.00 · 0%</div></div></div>
+      <div class="actions-row"><button class="primary" id="btn-guardar-nuevo">Guardar producto</button></div>
+      <datalist id="cat-list">${categoriasDatalist()}</datalist>
+    </div>
+  `;
+  const costo = document.getElementById('f-costo');
+  const precio = document.getElementById('f-precio');
+  const updatePreview = ()=>{
+    const {ganancia, pct} = calcMargen(costo.value, precio.value);
+    const el = document.getElementById('margin-preview');
+    el.textContent = `${money(ganancia)} · ${pct.toFixed(1)}%`;
+    el.className = 'num ' + (ganancia>=0?'pos':'neg');
+  };
+  costo.addEventListener('input', updatePreview);
+  precio.addEventListener('input', updatePreview);
+
+  document.getElementById('btn-guardar-nuevo').addEventListener('click', ()=>{
+    const nombre = document.getElementById('f-nombre').value.trim();
+    if(!nombre){ toast('Escribe el nombre del producto'); return; }
+    const categoria = document.getElementById('f-categoria').value.trim() || 'Sin categoría';
+    const stock = Number(document.getElementById('f-stock').value)||0;
+    const costoV = Number(costo.value)||0;
+    const precioV = Number(precio.value)||0;
+    const productos = getProductos();
+    productos.push({ codigo, nombre, categoria, stock, costo:costoV, precio:precioV, fechaAlta: new Date().toISOString() });
+    saveProductos(productos);
+    if(stock>0){
+      const movs = getMovs();
+      movs.unshift({id:cryptoId(), codigo, nombre, tipo:'entrada', cantidad:stock, motivo:'Alta inicial de producto', fecha:new Date().toISOString()});
+      saveMovs(movs);
+    }
+    toast('Producto guardado');
+    document.getElementById('manual-code').value='';
+    const p = productos.find(x=>x.codigo===codigo);
+    renderTicketExistente(p);
+  });
+}
+
+function renderTicketExistente(p){
+  const area = document.getElementById('ticket-area');
+  const {ganancia, pct} = calcMargen(p.costo, p.precio);
+  const lowStock = p.stock <= 2;
+  area.innerHTML = `
+    <div class="ticket">
+      <div class="ticket-header">
+        <div><h3>${p.nombre}</h3><div class="code-line">${p.codigo} · <span style="color:var(--amber-2); font-weight:700;">${p.categoria}</span></div></div>
+        <span class="badge existente">Registrado</span>
+      </div>
+      <span class="stock-pill ${lowStock?'low':''}">Stock: ${p.stock} ${lowStock?'· bajo':''}</span>
+      <div class="perf"></div>
+      <div class="field-grid">
+        <div><div class="lbl" style="font-size:11.5px;color:var(--muted);text-transform:uppercase;">Costo</div><div class="code">${money(p.costo)}</div></div>
+        <div><div class="lbl" style="font-size:11.5px;color:var(--muted);text-transform:uppercase;">Precio</div><div class="code">${money(p.precio)}</div></div>
+      </div>
+      <div class="margin-preview"><div><div class="lbl">Ganancia / margen</div><div class="num ${ganancia>=0?'pos':'neg'}">${money(ganancia)} · ${pct.toFixed(1)}%</div></div></div>
+      <div class="sell-row">
+        <div class="qty"><label>Cantidad</label><input type="number" id="sell-qty" min="1" value="1"></div>
+        <button class="primary" id="btn-vender" style="flex:1;">Registrar venta</button>
+      </div>
+      <div class="actions-row"><button class="secondary" id="btn-editar" style="flex:1;">Editar producto</button></div>
+    </div>
+  `;
+  document.getElementById('btn-vender').addEventListener('click', ()=>{
+    const qty = Number(document.getElementById('sell-qty').value)||1;
+    if(qty <= 0){ toast('Cantidad inválida'); return; }
+    if(qty > p.stock){ toast('No hay suficiente stock'); return; }
+    const productos = getProductos();
+    const idx = productos.findIndex(x=>x.codigo===p.codigo);
+    productos[idx].stock -= qty;
+    saveProductos(productos);
+    const ventas = getVentas();
+    ventas.unshift({ id:cryptoId(), codigo:p.codigo, nombre:p.nombre, categoria:p.categoria,
+      cantidad:qty, precioUnit:p.precio, costoUnit:p.costo,
+      total: qty*p.precio, gananciaTotal: qty*(p.precio-p.costo), fecha: new Date().toISOString() });
+    saveVentas(ventas);
+    toast(`Venta registrada: ${qty} × ${p.nombre}`);
+    renderTicketExistente(productos[idx]);
+  });
+  document.getElementById('btn-editar').addEventListener('click', ()=> openEditProductModal(p.codigo));
+}
+
+function categoriasDatalist(){
+  const cats = [...new Set(getProductos().map(p=>p.categoria))];
+  return cats.map(c=>`<option value="${c}">`).join('');
+}
+function cryptoId(){ return 'id'+Date.now()+Math.floor(Math.random()*10000); }
+
+/* ---------------- Inventario ---------------- */
+function renderInventario(){
+  const productos = getProductos();
+  const search = document.getElementById('inv-search').value.toLowerCase();
+  const filterCat = document.getElementById('inv-filter-cat').value;
+  const catSelect = document.getElementById('inv-filter-cat');
+  const cats = [...new Set(productos.map(p=>p.categoria))].sort();
+  const currentVal = catSelect.value;
+  catSelect.innerHTML = '<option value="">Todas las categorías</option>' + cats.map(c=>`<option value="${c}">${c}</option>`).join('');
+  catSelect.value = currentVal;
+
+  let filtered = productos.filter(p=>{
+    const matchSearch = !search || p.nombre.toLowerCase().includes(search) || p.codigo.includes(search);
+    const matchCat = !filterCat || p.categoria === filterCat;
+    return matchSearch && matchCat;
+  });
+
+  const list = document.getElementById('inv-list');
+  if(filtered.length===0){
+    list.innerHTML = `<div class="empty"><h3>Sin productos aún</h3><p>Escanea un código en la pestaña Escáner para empezar a registrar tu inventario.</p></div>`;
+    return;
+  }
+  filtered.sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  list.innerHTML = filtered.map(p=>{
+    const {ganancia, pct} = calcMargen(p.costo, p.precio);
+    return `
+      <div class="prod-card" data-codigo="${p.codigo}">
+        <div class="info"><h3>${p.nombre}</h3><div class="meta"><span class="cat">${p.categoria}</span> · ${p.codigo} · Stock: ${p.stock}</div></div>
+        <div class="nums"><div class="price">${money(p.precio)}</div><div class="margin ${ganancia>=0?'pos':'neg'}">${pct.toFixed(1)}% margen</div></div>
+      </div>`;
+  }).join('');
+  list.querySelectorAll('.prod-card').forEach(card=>{ card.addEventListener('click', ()=> openEditProductModal(card.dataset.codigo)); });
+}
+document.getElementById('inv-search').addEventListener('input', renderInventario);
+document.getElementById('inv-filter-cat').addEventListener('change', renderInventario);
+
+/* ---------------- Modal edición de producto ---------------- */
+function openEditProductModal(codigo){
+  const productos = getProductos();
+  const p = productos.find(x=>x.codigo===codigo);
+  if(!p) return;
+  const body = document.getElementById('modal-body');
+  body.innerHTML = `
+    <h3 style="margin-bottom:10px;">Editar producto</h3>
+    <div class="code-line" style="margin-bottom:10px;">${p.codigo}</div>
+    <div class="field-grid full"><div><label>Nombre</label><input id="m-nombre" value="${p.nombre}"></div></div>
+    <div class="field-grid">
+      <div><label>Categoría</label><input id="m-categoria" value="${p.categoria}"></div>
+      <div><label>Stock</label><input id="m-stock" type="number" min="0" value="${p.stock}"></div>
+    </div>
+    <div class="field-grid">
+      <div><label>Costo</label><input id="m-costo" type="number" min="0" step="0.01" value="${p.costo}"></div>
+      <div><label>Precio</label><input id="m-precio" type="number" min="0" step="0.01" value="${p.precio}"></div>
+    </div>
+    <div class="margin-preview"><div><div class="lbl">Ganancia / margen</div><div class="num" id="m-margin-preview">$0.00 · 0%</div></div></div>
+    <div class="actions-row">
+      <button class="primary" id="m-guardar" style="flex:1;">Guardar cambios</button>
+      <button class="danger" id="m-eliminar">Eliminar</button>
+    </div>
+  `;
+  const costo = document.getElementById('m-costo');
+  const precio = document.getElementById('m-precio');
+  const updatePreview = ()=>{
+    const {ganancia, pct} = calcMargen(costo.value, precio.value);
+    const el = document.getElementById('m-margin-preview');
+    el.textContent = `${money(ganancia)} · ${pct.toFixed(1)}%`;
+    el.className = 'num ' + (ganancia>=0?'pos':'neg');
+  };
+  costo.addEventListener('input', updatePreview);
+  precio.addEventListener('input', updatePreview);
+  updatePreview();
+
+  document.getElementById('m-guardar').addEventListener('click', ()=>{
+    const productos = getProductos();
+    const idx = productos.findIndex(x=>x.codigo===codigo);
+    productos[idx] = { ...productos[idx],
+      nombre: document.getElementById('m-nombre').value.trim() || productos[idx].nombre,
+      categoria: document.getElementById('m-categoria').value.trim() || 'Sin categoría',
+      stock: Number(document.getElementById('m-stock').value)||0,
+      costo: Number(costo.value)||0, precio: Number(precio.value)||0 };
+    saveProductos(productos);
+    closeModal(); renderInventario(); toast('Producto actualizado');
+  });
+  document.getElementById('m-eliminar').addEventListener('click', ()=>{
+    if(!confirm('¿Eliminar este producto del inventario?')) return;
+    const productos = getProductos().filter(x=>x.codigo!==codigo);
+    saveProductos(productos);
+    closeModal(); renderInventario(); toast('Producto eliminado');
+  });
+  document.getElementById('modal-bg').classList.add('active');
+}
+function closeModal(){ document.getElementById('modal-bg').classList.remove('active'); }
+document.getElementById('modal-bg').addEventListener('click', (e)=>{ if(e.target.id==='modal-bg') closeModal(); });
+
+/* ---------------- Entradas / Salidas ---------------- */
+function populateMovProductoSelect(){
+  const sel = document.getElementById('mv-producto');
+  const productos = getProductos().slice().sort((a,b)=>a.nombre.localeCompare(b.nombre));
+  sel.innerHTML = productos.map(p=>`<option value="${p.codigo}">${p.nombre} · ${p.codigo}</option>`).join('') || '<option value="">Sin productos registrados</option>';
+}
+document.getElementById('mv-tipo').addEventListener('change', ()=>{
+  document.getElementById('mv-costo-wrap').style.display = document.getElementById('mv-tipo').value==='entrada' ? 'block' : 'none';
+});
+
+function movimientoDelta(mov){ return mov.tipo==='entrada' ? Number(mov.cantidad) : -Number(mov.cantidad); }
+
+document.getElementById('btn-registrar-mov').addEventListener('click', ()=>{
+  const codigo = document.getElementById('mv-producto').value;
+  if(!codigo){ toast('Agrega productos primero desde el Escáner'); return; }
+  const tipo = document.getElementById('mv-tipo').value;
+  const cantidad = Number(document.getElementById('mv-cantidad').value)||0;
+  const motivo = document.getElementById('mv-motivo').value.trim() || (tipo==='entrada'?'Entrada':'Salida');
+  const costoInput = document.getElementById('mv-costo').value;
+  if(cantidad<=0){ toast('Cantidad inválida'); return; }
+
+  const productos = getProductos();
+  const idx = productos.findIndex(x=>x.codigo===codigo);
+  if(idx===-1){ toast('Producto no encontrado'); return; }
+
+  const delta = tipo==='entrada' ? cantidad : -cantidad;
+  if(productos[idx].stock + delta < 0){ toast('No hay suficiente stock para esa salida'); return; }
+  productos[idx].stock += delta;
+  if(tipo==='entrada' && costoInput !== ''){ productos[idx].costo = Number(costoInput)||0; }
+  saveProductos(productos);
+
+  const movs = getMovs();
+  movs.unshift({ id:cryptoId(), codigo, nombre:productos[idx].nombre, tipo, cantidad, motivo, fecha:new Date().toISOString() });
+  saveMovs(movs);
+
+  document.getElementById('mv-cantidad').value = 1;
+  document.getElementById('mv-motivo').value = '';
+  document.getElementById('mv-costo').value = '';
+  toast('Movimiento registrado');
+  renderMovimientos();
+});
+
+function renderMovimientos(){
+  populateMovProductoSelect();
+  document.getElementById('mv-costo-wrap').style.display = document.getElementById('mv-tipo').value==='entrada' ? 'block' : 'none';
+  const movs = getMovs();
+  const list = document.getElementById('mov-list');
+  if(movs.length===0){
+    list.innerHTML = `<div class="empty"><h3>Sin movimientos</h3><p>Registra entradas o salidas de stock que no sean ventas.</p></div>`;
+    return;
+  }
+  list.innerHTML = movs.map(m=>{
+    const fecha = new Date(m.fecha);
+    const fechaStr = fecha.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + fecha.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    return `
+      <div class="sale-row" data-id="${m.id}">
+        <div class="l">
+          <h4>${m.tipo==='entrada'?'+':'−'}${m.cantidad} · ${m.nombre}</h4>
+          <div class="meta">${fechaStr} · ${m.motivo}</div>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px;">
+          <span class="badge ${m.tipo}">${m.tipo}</span>
+          <button class="icon-btn edit-mov" data-id="${m.id}">✎</button>
+        </div>
+      </div>`;
+  }).join('');
+  list.querySelectorAll('.edit-mov').forEach(btn=>{ btn.addEventListener('click', ()=> openEditMovModal(btn.dataset.id)); });
+}
+
+function openEditMovModal(id){
+  const movs = getMovs();
+  const m = movs.find(x=>x.id===id);
+  if(!m) return;
+  const body = document.getElementById('modal-body');
+  body.innerHTML = `
+    <h3 style="margin-bottom:10px;">Editar movimiento</h3>
+    <div class="code-line" style="margin-bottom:10px;">${m.nombre} · ${m.codigo}</div>
+    <div class="field-grid">
+      <div><label>Tipo</label>
+        <select id="em-tipo">
+          <option value="entrada" ${m.tipo==='entrada'?'selected':''}>Entrada (+ stock)</option>
+          <option value="salida" ${m.tipo==='salida'?'selected':''}>Salida (− stock)</option>
+        </select>
+      </div>
+      <div><label>Cantidad</label><input id="em-cantidad" type="number" min="1" value="${m.cantidad}"></div>
+    </div>
+    <div class="field-grid full"><div><label>Motivo</label><input id="em-motivo" value="${m.motivo}"></div></div>
+    <div class="actions-row">
+      <button class="primary" id="em-guardar" style="flex:1;">Guardar cambios</button>
+      <button class="danger" id="em-eliminar">Eliminar</button>
+    </div>
+  `;
+  document.getElementById('em-guardar').addEventListener('click', ()=>{
+    const nuevoTipo = document.getElementById('em-tipo').value;
+    const nuevaCantidad = Number(document.getElementById('em-cantidad').value)||0;
+    const nuevoMotivo = document.getElementById('em-motivo').value.trim() || m.motivo;
+    if(nuevaCantidad<=0){ toast('Cantidad inválida'); return; }
+
+    const productos = getProductos();
+    const pIdx = productos.findIndex(x=>x.codigo===m.codigo);
+    if(pIdx===-1){ toast('El producto ya no existe'); return; }
+
+    const oldDelta = movimientoDelta(m);
+    const newDelta = nuevoTipo==='entrada' ? nuevaCantidad : -nuevaCantidad;
+    const projectedStock = productos[pIdx].stock - oldDelta + newDelta;
+    if(projectedStock < 0){ toast('Ese cambio dejaría el stock en negativo'); return; }
+
+    productos[pIdx].stock = projectedStock;
+    saveProductos(productos);
+
+    const movsAll = getMovs();
+    const mIdx = movsAll.findIndex(x=>x.id===id);
+    movsAll[mIdx] = { ...movsAll[mIdx], tipo:nuevoTipo, cantidad:nuevaCantidad, motivo:nuevoMotivo };
+    saveMovs(movsAll);
+
+    closeModal(); renderMovimientos(); toast('Movimiento actualizado');
+  });
+  document.getElementById('em-eliminar').addEventListener('click', ()=>{
+    if(!confirm('¿Eliminar este movimiento? Se revertirá su efecto en el stock.')) return;
+    const productos = getProductos();
+    const pIdx = productos.findIndex(x=>x.codigo===m.codigo);
+    if(pIdx!==-1){
+      const oldDelta = movimientoDelta(m);
+      const projectedStock = productos[pIdx].stock - oldDelta;
+      productos[pIdx].stock = Math.max(0, projectedStock);
+      saveProductos(productos);
+    }
+    const movsAll = getMovs().filter(x=>x.id!==id);
+    saveMovs(movsAll);
+    closeModal(); renderMovimientos(); toast('Movimiento eliminado');
+  });
+  document.getElementById('modal-bg').classList.add('active');
+}
+
+/* ---------------- Ventas: semana, tabla, meta, pronóstico, registro editable ---------------- */
+const DIAS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+function mondayOf(d){
+  const date = new Date(d); const day = date.getDay();
+  const diff = (day===0 ? -6 : 1-day);
+  date.setDate(date.getDate()+diff); date.setHours(0,0,0,0);
+  return date;
+}
+let currentWeekStart = mondayOf(new Date());
+
+function fmtShort(d){ return d.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}); }
+
+function renderVentasView(){
+  const ventas = getVentas();
+  const unidades = ventas.reduce((s,v)=>s+v.cantidad,0);
+  const ingresos = ventas.reduce((s,v)=>s+v.total,0);
+  const ganancia = ventas.reduce((s,v)=>s+v.gananciaTotal,0);
+  document.getElementById('sum-unidades').textContent = unidades;
+  document.getElementById('sum-ingresos').textContent = money(ingresos);
+  document.getElementById('sum-ganancia').textContent = money(ganancia);
+
+  document.getElementById('meta-input').value = getMeta() || '';
+  renderWeekTable();
+  renderForecast();
+  renderSalesRegTable();
+}
+
+document.getElementById('week-prev').addEventListener('click', ()=>{ currentWeekStart.setDate(currentWeekStart.getDate()-7); renderWeekTable(); });
+document.getElementById('week-next').addEventListener('click', ()=>{ currentWeekStart.setDate(currentWeekStart.getDate()+7); renderWeekTable(); });
+
+function renderWeekTable(){
+  const weekStart = new Date(currentWeekStart);
+  const weekEnd = new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+7);
+  document.getElementById('week-range').textContent = `${fmtShort(weekStart)} – ${fmtShort(new Date(weekEnd.getTime()-86400000))}`;
+
+  const ventas = getVentas().filter(v=>{
+    const f = new Date(v.fecha);
+    return f >= weekStart && f < weekEnd;
+  });
+
+  const todayIdx = (()=>{ const d = new Date().getDay(); return d===0?6:d-1; })();
+  const isCurrentWeek = mondayOf(new Date()).getTime() === weekStart.getTime();
+
+  const porProducto = {};
+  ventas.forEach(v=>{
+    const f = new Date(v.fecha);
+    const dayIdx = Math.floor((f - weekStart) / 86400000);
+    if(!porProducto[v.nombre]) porProducto[v.nombre] = [0,0,0,0,0,0,0];
+    porProducto[v.nombre][dayIdx] += v.total;
+  });
+
+  const table = document.getElementById('week-table');
+  const nombres = Object.keys(porProducto).sort();
+
+  let head = `<tr><th>Producto</th>` + DIAS.map((d,i)=>`<th class="${(isCurrentWeek && i===todayIdx)?'today-col':''}">${d}</th>`).join('') + `<th class="week-total">Semana</th></tr>`;
+
+  let rows = '';
+  const dayTotals = [0,0,0,0,0,0,0];
+  let grandTotal = 0;
+  if(nombres.length===0){
+    rows = `<tr><td colspan="9" style="text-align:center; color:var(--muted); padding:16px 0;">Sin ventas registradas esta semana</td></tr>`;
+  } else {
+    nombres.forEach(nombre=>{
+      const vals = porProducto[nombre];
+      const rowTotal = vals.reduce((a,b)=>a+b,0);
+      grandTotal += rowTotal;
+      vals.forEach((v,i)=> dayTotals[i]+=v);
+      rows += `<tr><td>${nombre}</td>` + vals.map((v,i)=>`<td class="${(isCurrentWeek && i===todayIdx)?'today-col':''}">${v>0?money(v):'—'}</td>`).join('') + `<td class="week-total">${money(rowTotal)}</td></tr>`;
+    });
+  }
+  const totalRow = `<tr class="total-row"><td>Total del día</td>` + dayTotals.map((v,i)=>`<td class="${(isCurrentWeek && i===todayIdx)?'today-col':''}">${money(v)}</td>`).join('') + `<td class="week-total">${money(grandTotal)}</td></tr>`;
+
+  table.innerHTML = head + rows + totalRow;
+
+  const meta = getMeta();
+  const pct = meta>0 ? Math.min(100, (grandTotal/meta)*100) : 0;
+  const fill = document.getElementById('goal-progress');
+  fill.style.width = pct + '%';
+  fill.classList.toggle('over', grandTotal >= meta && meta>0);
+  document.getElementById('goal-actual').textContent = `${money(grandTotal)} de esta semana`;
+  document.getElementById('goal-restante').textContent = meta>0 ? `Meta: ${money(meta)} (${pct.toFixed(0)}%)` : 'Sin meta definida';
+}
+
+document.getElementById('btn-guardar-meta').addEventListener('click', ()=>{
+  const v = Number(document.getElementById('meta-input').value)||0;
+  saveMeta(v);
+  toast('Meta semanal guardada');
+  renderWeekTable();
+});
+
+function renderForecast(){
+  const ventas = getVentas();
+  if(ventas.length===0){
+    document.getElementById('forecast-num').textContent = '—';
+    document.getElementById('forecast-note').textContent = 'Registra ventas durante al menos una semana completa para ver un pronóstico.';
+    return;
+  }
+  const now = new Date();
+  const thisWeekStart = mondayOf(now);
+  const weekTotals = {};
+  ventas.forEach(v=>{
+    const f = new Date(v.fecha);
+    const ws = mondayOf(f).getTime();
+    weekTotals[ws] = (weekTotals[ws]||0) + v.total;
+  });
+  const completedWeeks = Object.keys(weekTotals).map(Number).filter(ws => ws < thisWeekStart.getTime()).sort((a,b)=>b-a);
+  if(completedWeeks.length===0){
+    document.getElementById('forecast-num').textContent = '—';
+    document.getElementById('forecast-note').textContent = 'Aún estás en tu primera semana de registro. La próxima semana ya podrás ver un pronóstico basado en tu historial.';
+    return;
+  }
+  const lastWeeks = completedWeeks.slice(0,4);
+  const avg = lastWeeks.reduce((s,ws)=>s+weekTotals[ws],0) / lastWeeks.length;
+  document.getElementById('forecast-num').textContent = money(avg);
+  document.getElementById('forecast-note').textContent = `Basado en el promedio de tus últimas ${lastWeeks.length} semana(s) completas de ventas. Úsalo como referencia para ajustar tu meta semanal.`;
+}
+
+function renderSalesRegTable(){
+  const ventas = getVentas();
+  const table = document.getElementById('sales-reg-table');
+  if(ventas.length===0){
+    table.innerHTML = `<tr><td style="text-align:center; color:var(--muted); padding:20px 0;">Aún no hay ventas registradas</td></tr>`;
+    return;
+  }
+  let head = `<tr><th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Total</th><th></th></tr>`;
+  let rows = ventas.map(v=>{
+    const f = new Date(v.fecha);
+    const fechaStr = f.toLocaleDateString('es-MX',{day:'2-digit',month:'short'}) + ' ' + f.toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    return `<tr>
+      <td>${fechaStr}</td>
+      <td>${v.nombre}</td>
+      <td class="num">${v.cantidad}</td>
+      <td class="num">${money(v.precioUnit)}</td>
+      <td class="num">${money(v.total)}</td>
+      <td><button class="icon-btn edit-sale" data-id="${v.id}">✎</button></td>
+    </tr>`;
+  }).join('');
+  table.innerHTML = head + rows;
+  table.querySelectorAll('.edit-sale').forEach(btn=>{ btn.addEventListener('click', ()=> openEditSaleModal(btn.dataset.id)); });
+}
+
+function openEditSaleModal(id){
+  const ventas = getVentas();
+  const v = ventas.find(x=>x.id===id);
+  if(!v) return;
+  const body = document.getElementById('modal-body');
+  body.innerHTML = `
+    <h3 style="margin-bottom:10px;">Editar venta</h3>
+    <div class="code-line" style="margin-bottom:10px;">${v.nombre} · ${v.codigo}</div>
+    <div class="field-grid">
+      <div><label>Cantidad</label><input id="ev-cantidad" type="number" min="1" value="${v.cantidad}"></div>
+      <div><label>Precio unitario</label><input id="ev-precio" type="number" min="0" step="0.01" value="${v.precioUnit}"></div>
+    </div>
+    <div class="margin-preview"><div><div class="lbl">Total / ganancia</div><div class="num" id="ev-preview">${money(v.total)} · +${money(v.gananciaTotal)}</div></div></div>
+    <div class="actions-row">
+      <button class="primary" id="ev-guardar" style="flex:1;">Guardar cambios</button>
+      <button class="danger" id="ev-eliminar">Eliminar venta</button>
+    </div>
+  `;
+  const cantEl = document.getElementById('ev-cantidad');
+  const precioEl = document.getElementById('ev-precio');
+  const updatePrev = ()=>{
+    const c = Number(cantEl.value)||0; const p = Number(precioEl.value)||0;
+    const total = c*p; const gan = c*(p-v.costoUnit);
+    document.getElementById('ev-preview').textContent = `${money(total)} · +${money(gan)}`;
+  };
+  cantEl.addEventListener('input', updatePrev);
+  precioEl.addEventListener('input', updatePrev);
+
+  document.getElementById('ev-guardar').addEventListener('click', ()=>{
+    const nuevaCant = Number(cantEl.value)||0;
+    const nuevoPrecio = Number(precioEl.value)||0;
+    if(nuevaCant<=0){ toast('Cantidad inválida'); return; }
+
+    const productos = getProductos();
+    const pIdx = productos.findIndex(x=>x.codigo===v.codigo);
+    if(pIdx!==-1){
+      const diff = v.cantidad - nuevaCant; // si compran menos, se regresa stock
+      const projected = productos[pIdx].stock + diff;
+      if(projected < 0){ toast('No hay suficiente stock para esa cantidad'); return; }
+      productos[pIdx].stock = projected;
+      saveProductos(productos);
+    }
+
+    const ventasAll = getVentas();
+    const idx = ventasAll.findIndex(x=>x.id===id);
+    ventasAll[idx] = { ...ventasAll[idx], cantidad:nuevaCant, precioUnit:nuevoPrecio,
+      total: nuevaCant*nuevoPrecio, gananciaTotal: nuevaCant*(nuevoPrecio - v.costoUnit) };
+    saveVentas(ventasAll);
+
+    closeModal(); renderVentasView(); toast('Venta actualizada');
+  });
+  document.getElementById('ev-eliminar').addEventListener('click', ()=>{
+    if(!confirm('¿Eliminar esta venta? El stock se devolverá al inventario.')) return;
+    const productos = getProductos();
+    const pIdx = productos.findIndex(x=>x.codigo===v.codigo);
+    if(pIdx!==-1){ productos[pIdx].stock += v.cantidad; saveProductos(productos); }
+    const ventasAll = getVentas().filter(x=>x.id!==id);
+    saveVentas(ventasAll);
+    closeModal(); renderVentasView(); toast('Venta eliminada');
+  });
+  document.getElementById('modal-bg').classList.add('active');
+}
+
+/* Init */
+renderInventario();
+</script>
+</body>
+</html>
