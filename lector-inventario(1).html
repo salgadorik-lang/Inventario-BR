@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Escáner de Inventario</title>
+<title>Inventario BR </title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
@@ -384,10 +384,18 @@ let lastCodeTime = 0;
 
 function startScanner(){
   Quagga.init({
-    inputStream:{ name:"Live", type:"LiveStream", target: document.querySelector('#interactive'),
-      constraints:{ facingMode:"environment", width:{ideal:640}, height:{ideal:480} } },
-    decoder:{ readers:["ean_reader","ean_8_reader","code_128_reader","upc_reader","upc_e_reader","codabar_reader"] },
-    locate:true
+    inputStream:{ 
+      name:"Live", 
+      type:"LiveStream", 
+      target: document.querySelector('#interactive'),
+      constraints:{
+        facingMode:{ideal:"environment"},
+        width:{ideal:1280},
+        height:{ideal:720}
+      }
+    },
+locate:true,
+frequency:10
   }, function(err){
     if(err){ console.error(err); toast('No se pudo abrir la cámara. Usa el campo manual.'); return; }
     Quagga.start();
@@ -399,11 +407,22 @@ function startScanner(){
   Quagga.onDetected(onBarcodeDetected);
 }
 function onBarcodeDetected(result){
-  const code = result.codeResult.code;
+  const code = result?.codeResult?.code;
+
+  if(!code) return;
+
+  console.log("CÓDIGO DETECTADO:", code);
+  toast("Código detectado: " + code);
+
   const now = Date.now();
+
   if(code === lastCode && (now - lastCodeTime) < 2500) return;
-  lastCode = code; lastCodeTime = now;
+
+  lastCode = code;
+  lastCodeTime = now;
+
   if(navigator.vibrate) navigator.vibrate(80);
+
   handleScannedCode(code);
 }
 function stopScanner(){
